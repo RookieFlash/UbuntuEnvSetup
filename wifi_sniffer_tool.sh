@@ -15,7 +15,7 @@ mkdir -p $BACKUP_DIR
 # 日志打印
 # --------------------------------------------------------------------------------------
 # 颜色输出函数
-log_status() {
+log_info() {
     echo -e "\033[1;32m`date +\"%Y-%m-%d %H:%M:%S\"` [INFO]\033[0m $1"
 }
 
@@ -164,7 +164,7 @@ stop_wireshark() {
 # 备份当前连接状态
 # --------------------------------------------------------------------------------------
 backup_connection_state() {
-    log_status "备份当前连接状态..."
+    log_info "备份当前连接状态..."
     
     # 保存当前活动连接信息
     nmcli connection show --active | grep $INTERFACE > $BACKUP_DIR/active_wifi_connection 2>/dev/null || true
@@ -179,7 +179,7 @@ backup_connection_state() {
     # 保存IP配置
     ip addr show $INTERFACE > $BACKUP_DIR/ip_config 2>/dev/null || true
     
-    log_status "连接状态备份完成"
+    log_info "连接状态备份完成"
 }
 
 
@@ -187,11 +187,11 @@ backup_connection_state() {
 # 恢复正常上网模式 (精准恢复版)
 # --------------------------------------------------------------------------------------
 restore_normal_mode() {
-    log_status "恢复正常上网模式..."
+    log_info "恢复正常上网模式..."
     INTERFACE=$1
     
     # 1. 停止抓包相关进程
-    log_status "停止抓包相关进程..."
+    log_info "停止抓包相关进程..."
     pkill -f "airodump-ng" 2>/dev/null || true
     pkill -f "aireplay-ng" 2>/dev/null || true
     pkill -f "aircrack-ng" 2>/dev/null || true
@@ -200,18 +200,18 @@ restore_normal_mode() {
     # 2. 检查并停止monitor模式
     MONITOR_IF=$(iwconfig 2>/dev/null | grep "Mode:Monitor" | awk '{print $1}' | head -1)
     if [ ! -z "$MONITOR_IF" ]; then
-        log_status "停止monitor模式: $MONITOR_IF"
+        log_info "停止monitor模式: $MONITOR_IF"
         airmon-ng stop $MONITOR_IF 2>/dev/null || true
         sleep 1
     fi
     
     # 3. 停止热点相关服务
-    log_status "停止热点相关服务..."
+    log_info "停止热点相关服务..."
     pkill -f "hostapd" 2>/dev/null || true
     pkill -f "dnsmasq" 2>/dev/null || true
     
     # 4. 清理网络配置
-    log_status "清理网络配置..."
+    log_info "清理网络配置..."
     # 清理IP地址（保留环回接口）
     ip addr flush dev $INTERFACE 2>/dev/null || true
     # 清理iptables规则
@@ -219,22 +219,22 @@ restore_normal_mode() {
     iptables -F FORWARD 2>/dev/null || true
     
     # 5. 确保接口处于正确状态
-    log_status "重置网卡接口..."
+    log_info "重置网卡接口..."
     ip link set $INTERFACE down 2>/dev/null || true
     sleep 1
     ip link set $INTERFACE up 2>/dev/null || true
     
     # 6. 重新让NetworkManager管理wlan0 (关键步骤)
-    log_status "将 $INTERFACE 重新交给NetworkManager管理..."
+    log_info "将 $INTERFACE 重新交给NetworkManager管理..."
     nmcli device set $INTERFACE managed yes
     
     # 7. 等待NetworkManager接管设备
-    log_status "等待NetworkManager接管设备..."
+    log_info "等待NetworkManager接管设备..."
     sleep 5
     
     if ! nmcli device show $INTERFACE | grep -q "connected"; then
         # 8. 重新扫描WiFi网络
-        log_status "重新扫描WiFi网络..."
+        log_info "重新扫描WiFi网络..."
         nmcli device wifi rescan
         sleep 2
         
@@ -242,7 +242,7 @@ restore_normal_mode() {
         if [ -f "$BACKUP_DIR/connection_name" ]; then
             CONNECTION_NAME=$(cat $BACKUP_DIR/connection_name | cut -d: -f2)
             if [ ! -z "$CONNECTION_NAME" ] && [ "$CONNECTION_NAME" != "--" ]; then
-                log_status "尝试连接到之前的网络: $CONNECTION_NAME"
+                log_info "尝试连接到之前的网络: $CONNECTION_NAME"
                 nmcli connection up "$CONNECTION_NAME" 2>/dev/null || true
                 sleep 3
             fi
@@ -254,14 +254,14 @@ restore_normal_mode() {
         IP_ADDR=$(ip addr show $INTERFACE | grep "inet " | awk '{print $2}' | head -1)
         SSID=$(iwconfig $INTERFACE 2>/dev/null | grep "ESSID" | cut -d'"' -f2)
         log_success "网络连接已恢复！"
-        [ ! -z "$SSID" ] && log_status "已连接到: $SSID"
-        [ ! -z "$IP_ADDR" ] && log_status "IP地址: $IP_ADDR"
+        [ ! -z "$SSID" ] && log_info "已连接到: $SSID"
+        [ ! -z "$IP_ADDR" ] && log_info "IP地址: $IP_ADDR"
     else
         log_warning "自动连接失败，显示可用网络供手动连接："
         echo ""
         nmcli device wifi list | head -8
         echo ""
-        log_status "手动连接命令示例："
+        log_info "手动连接命令示例："
         echo "nmcli device wifi connect \"WiFi名称\" password \"密码\""
     fi
 }
@@ -278,7 +278,7 @@ enter_monitor_mode() {
 
     check_wireless $INTERFACE
     
-    log_status "进入Monitor模式（抓包模式）..."
+    log_info "进入Monitor模式（抓包模式）..."
     
     # 验证频段参数
     if [ "$BAND" != "2.4" ] && [ "$BAND" != "5" ]; then
@@ -292,23 +292,23 @@ enter_monitor_mode() {
             log_error "网卡不支持5GHz频段"
             exit 1
         fi
-        log_status "将在5GHz频段进行抓包"
+        log_info "将在5GHz频段进行抓包"
     else
-        log_status "将在2.4GHz频段进行抓包"
+        log_info "将在2.4GHz频段进行抓包"
     fi
     
     # 1. 备份当前连接状态
     backup_connection_state
     
     # 2. 将wlan0从NetworkManager管理中移除 (关键步骤)
-    log_status "将 $INTERFACE 从NetworkManager管理中移除..."
+    log_info "将 $INTERFACE 从NetworkManager管理中移除..."
     nmcli device set $INTERFACE managed no
     
     # 3. 等待NetworkManager释放控制权
     sleep 2
     
     # 4. 精确停止wlan0相关的网络进程
-    log_status "停止 $INTERFACE 相关的网络进程..."
+    log_info "停止 $INTERFACE 相关的网络进程..."
     
     # 现代Ubuntu中，NetworkManager管理WiFi时通常不会有独立的wpa_supplicant进程
     # 而是通过NetworkManager内部集成的wpa_supplicant
@@ -317,7 +317,7 @@ enter_monitor_mode() {
     if [ ! -z "$WPA_PID" ]; then
         # 检查这个wpa_supplicant是否在使用我们的接口
         if lsof -p $WPA_PID 2>/dev/null | grep -q $INTERFACE; then
-            log_status "停止使用 $INTERFACE 的wpa_supplicant进程 (PID: $WPA_PID)"
+            log_info "停止使用 $INTERFACE 的wpa_supplicant进程 (PID: $WPA_PID)"
             kill $WPA_PID
             sleep 1
         fi
@@ -328,7 +328,7 @@ enter_monitor_mode() {
     for dhcp_client in "dhclient" "dhcpcd" "udhcpc"; do
         DHCP_PID=$(pgrep -f "$dhcp_client.*$INTERFACE" | head -1)
         if [ ! -z "$DHCP_PID" ]; then
-            log_status "停止 $dhcp_client 进程 (PID: $DHCP_PID)"
+            log_info "停止 $dhcp_client 进程 (PID: $DHCP_PID)"
             kill $DHCP_PID
             sleep 1
             break
@@ -336,12 +336,12 @@ enter_monitor_mode() {
     done
 
     # 额外检查：确保接口从NetworkManager断开
-    log_status "确保 $INTERFACE 从NetworkManager断开连接..."
+    log_info "确保 $INTERFACE 从NetworkManager断开连接..."
     nmcli device disconnect $INTERFACE 2>/dev/null || true
     sleep 1
 
     # 5. 启动monitor模式
-    log_status "启动monitor模式..."
+    log_info "启动monitor模式..."
     airmon-ng start $INTERFACE
 
     # 6. 验证monitor模式是否成功启动
@@ -360,13 +360,13 @@ enter_monitor_mode() {
 
     if [ ! -z "$MONITOR_INTERFACE" ] && iwconfig $MONITOR_INTERFACE 2>/dev/null | grep -q "Mode:Monitor"; then
         log_success "Monitor模式启动成功！"
-        log_status "Monitor接口: $MONITOR_INTERFACE"
-        log_status "抓包频段: ${BAND}GHz"
-        log_status ""
-        log_status "=== 接口[$MONITOR_INTERFACE]状态 ==="
+        log_info "Monitor接口: $MONITOR_INTERFACE"
+        log_info "抓包频段: ${BAND}GHz"
+        log_info ""
+        log_info "=== 接口[$MONITOR_INTERFACE]状态 ==="
         echo "`iwconfig $MONITOR_INTERFACE`"
-        log_status ""
-        log_status "=== 常用抓包命令 ==="
+        log_info ""
+        log_info "=== 常用抓包命令 ==="
 
         if [ "$BAND" = "5" ]; then
             echo "# 扫描5GHz所有信道："
@@ -399,7 +399,7 @@ enter_monitor_mode() {
         echo "sudo $(get_script_name) normal"
         echo ""
 
-        log_status "Start Wireshark"
+        log_info "Start Wireshark"
         start_wireshark
         echo "========================================================"
     else
@@ -408,7 +408,7 @@ enter_monitor_mode() {
         echo "  1. 网卡不支持monitor模式"
         echo "  2. 驱动程序问题"
         echo "  3. 其他进程占用网卡"
-        log_status "尝试恢复正常模式..."
+        log_info "尝试恢复正常模式..."
         restore_normal_mode
         exit 1
     fi
@@ -544,7 +544,7 @@ force_cleanup() {
     # 重新让NetworkManager管理
     nmcli device set $INTERFACE managed yes
 
-    log_status "强制清理完成，请检查网络状态"
+    log_info "强制清理完成，请检查网络状态"
 }
 
 # --------------------------------------------------------------------------------------
