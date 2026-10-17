@@ -128,14 +128,20 @@ stop_wireshark() {
     #     wait "$pid" 2>/dev/null
     # fi
     
-    ans=""
-    if [ -t 0 ] || [ -c /dev/tty ]; then
-        # -t 10: 超时 10 秒；读 /dev/tty 保证 trap 场景下也能读
-        read -r -t 10 -p "Kill Wireshark? [y/N] (10s timeout, default N): " ans </dev/tty
-        local rc=$?
-        if [ $rc -ne 0 ]; then
-            echo    # 超时/EOF 后补个换行，免得提示符错位
-            log_warn "No response within 10s (or input aborted) -> defaulting to N."
+    ans="n"
+    if [ -c /dev/tty ]; then
+        # 倒计时询问：每秒刷新剩余秒数，按任意键即返回
+        for ((i=10; i>0; i--)); do
+            printf '\rKill Wireshark (PID %s)? [y/N] — %2ds left: ' "$pid" "$i" >&2
+            if IFS= read -r -t 1 -n 1 ans </dev/tty; then
+                printf '\n' >&2
+                break
+            fi
+            ans=""          # 本秒未输入，清空，进入下一轮
+        done
+        if [ -z "$ans" ]; then
+            printf '\n' >&2
+            log_warn "No answer within 10s -> defaulting to N (keep running)."
             ans="n"
         fi
     else
