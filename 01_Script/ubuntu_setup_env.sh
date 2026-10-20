@@ -109,7 +109,7 @@ install_base_tools() {
         git vim curl wget \
         net-tools iproute2 \
         htop tree unzip zip pkg-config \
-        openssh-server npm locate"
+        openssh-server npm locate copyq"
 }
 
 # -------------------------------------------------------------------------------------------------------
